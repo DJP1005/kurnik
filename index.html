@@ -17,13 +17,22 @@
     .status-lamp { display: inline-block; width: 15px; height: 15px; border-radius: 50%; margin-right: 5px; background-color: #888; }
     .status-row { margin: 5px 0; }
   </style>
-  <!-- Ładowanie biblioteki MQTT.js z CDN -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
   <h1>Sterowanie Kurnikiem</h1>
 
-  <!-- Sekcja: Harmonogram -->
+  <div class="section">
+    <h2>Zegar i statusy</h2>
+    <div class="status-row">Zegar ESP: <span id="clock">--:--:--</span></div>
+    <div class="status-row">
+      <span class="status-lamp" id="lampLightState"></span> Stan światła<br>
+      <span class="status-lamp" id="lampDoorState"></span> Stan drzwi<br>
+      <span class="status-lamp" id="lampLimitOpen"></span> Krańcówka OTWARCIA<br>
+      <span class="status-lamp" id="lampLimitClose"></span> Krańcówka ZAMKNIĘCIA
+    </div>
+  </div>
+
   <div class="section">
     <h2>Harmonogram</h2>
     <div>
@@ -40,172 +49,85 @@
     </div>
   </div>
 
-  <!-- Sekcja: Ręczne sterowanie -->
   <div class="section">
     <h2>Sterowanie ręczne</h2>
-    <!-- Światło -->
     <div class="status-row">
-      <span class="status-lamp" id="lampLightState"></span>
-      Stan światła:
-      <button id="btnLightOn">Włącz</button>
-      <button class="red" id="btnLightOff">Wyłącz</button>
+      <button id="btnLightOn">Włącz światło</button>
+      <button class="red" id="btnLightOff">Wyłącz światło</button>
     </div>
-    <!-- Drzwi -->
     <div class="status-row">
-      <span class="status-lamp" id="lampDoorState"></span>
-      Stan drzwi:
-      <button id="btnDoorOpen">Otwórz</button>
-      <button class="red" id="btnDoorClose">Zamknij</button>
+      <button id="btnDoorOpen">Otwórz drzwi</button>
+      <button class="red" id="btnDoorClose">Zamknij drzwi</button>
       <button class="gray" id="btnDoorStop">STOP</button>
-    </div>
-    <!-- Krańcówki -->
-    <div class="status-row">
-      <span class="status-lamp" id="lampLimitOpen"></span> Krańcówka OTWARCIA 
-      <span class="status-lamp" id="lampLimitClose" style="margin-left: 20px;"></span> Krańcówka ZAMKNIĘCIA
     </div>
   </div>
 
   <script>
-    // 1) Host HiveMQ Cloud
-    const host = "42ceb2ec1aef4657b29ae73f374ca029.s1.eu.hivemq.cloud";
-    // 2) Port WebSocket (TLS Websocket Port)
-    const port = 8884;
-    // 3) Generowanie unikalnego clientId
-    const clientId = "web_" + Math.random().toString(16).substr(2, 8);
-    // 4) Dane uwierzytelniające z HiveMQ Cloud
-    const username = "websocket";
-    const password = "Pawel1005";
-    // 5) Pełny URL WSS dla połączenia
-    const websocketURL = `wss://${host}:${port}/mqtt`;
-
-    // 6) Opcje połączenia MQTT.js
-    const options = {
-      keepalive: 60,
-      clientId: clientId,
-      protocolId: "MQTT",
-      protocolVersion: 4,
-      clean: true,
-      reconnectPeriod: 2000,
-      connectTimeout: 4000,
-      username: username,
-      password: password
-      // W razie problemów z certyfikatem można odkomentować poniższą linię:
-      // rejectUnauthorized: false
-    };
-
-    // 7) Inicjalizacja klienta MQTT.js
-    const mqttClient = mqtt.connect(websocketURL, options);
-
-    // ——— Obsługa połączenia ———
-    mqttClient.on("connect", () => {
-      console.log("[MQTT] Połączono z HiveMQ Cloud!");
-      // Subskrybujemy tematy, żeby otrzymywać aktualne statusy
-      mqttClient.subscribe("kurnik/schedule/state");
-      mqttClient.subscribe("kurnik/light/state");
-      mqttClient.subscribe("kurnik/door/state");
-      mqttClient.subscribe("kurnik/limit/open");
-      mqttClient.subscribe("kurnik/limit/close");
+    const client = mqtt.connect('wss://42ceb2ec1aef4657b29ae73f374ca029.s1.eu.hivemq.cloud:8884/mqtt', {
+      username: 'websocket',
+      password: 'Pawel1005'
     });
 
-    mqttClient.on("reconnect", () => {
-      console.log("[MQTT] Próba ponownego połączenia...");
+    client.on('connect', () => {
+      console.log('[MQTT] Połączono');
+      client.subscribe('kurnik/time');
+      client.subscribe('kurnik/light/state');
+      client.subscribe('kurnik/door/state');
+      client.subscribe('kurnik/limit/open');
+      client.subscribe('kurnik/limit/close');
+      client.subscribe('kurnik/schedule/state');
+      client.publish('kurnik/schedule/set', '{}');
     });
 
-    mqttClient.on("error", (err) => {
-      console.error("[MQTT] Błąd:", err);
-    });
-
-    mqttClient.on("message", (topic, payload) => {
-      const msg = payload.toString();
-      // Obsługa wiadomości według tematu:
-      if (topic === "kurnik/schedule/state") {
-        // Otrzymaliśmy JSON z czterema czasami
-        try {
-          const sched = JSON.parse(msg);
-          document.getElementById("timeOpen").value     = sched.timeOpen;
-          document.getElementById("timeClose").value    = sched.timeClose;
-          document.getElementById("timeLightOn").value  = sched.timeLightOn;
-          document.getElementById("timeLightOff").value = sched.timeLightOff;
-        } catch (e) {
-          console.error("Błąd parsowania harmonogramu:", e);
-        }
-      }
-      else if (topic === "kurnik/light/state") {
-        // msg będzie "ON" lub "OFF"
-        const on = (msg === "ON");
-        document.getElementById("lampLightState").style.backgroundColor = on ? "#2c7" : "#888";
-      }
-      else if (topic === "kurnik/door/state") {
-        // msg będzie "OPENING", "CLOSING" lub "STOPPED"
-        const moving = (msg === "OPENING" || msg === "CLOSING");
-        document.getElementById("lampDoorState").style.backgroundColor = moving ? "#2c7" : "#888";
-      }
-      else if (topic === "kurnik/limit/open") {
-        // msg będzie "1" lub "0"
-        const pressed = (msg === "1");
-        document.getElementById("lampLimitOpen").style.backgroundColor = pressed ? "#2c7" : "#888";
-      }
-      else if (topic === "kurnik/limit/close") {
-        const pressed = (msg === "1");
-        document.getElementById("lampLimitClose").style.backgroundColor = pressed ? "#2c7" : "#888";
+    client.on('message', (topic, message) => {
+      const msg = message.toString();
+      switch(topic) {
+        case 'kurnik/time':
+          document.getElementById('clock').textContent = msg;
+          break;
+        case 'kurnik/light/state':
+          document.getElementById('lampLightState').style.backgroundColor = (msg === 'ON') ? '#2c7' : '#888';
+          break;
+        case 'kurnik/door/state':
+          document.getElementById('lampDoorState').style.backgroundColor = (msg === 'OPENING' || msg === 'CLOSING') ? '#2c7' : '#888';
+          break;
+        case 'kurnik/limit/open':
+          document.getElementById('lampLimitOpen').style.backgroundColor = (msg === '1') ? '#2c7' : '#888';
+          break;
+        case 'kurnik/limit/close':
+          document.getElementById('lampLimitClose').style.backgroundColor = (msg === '1') ? '#2c7' : '#888';
+          break;
+        case 'kurnik/schedule/state':
+          try {
+            const sched = JSON.parse(msg);
+            document.getElementById('timeOpen').value = sched.timeOpen;
+            document.getElementById('timeClose').value = sched.timeClose;
+            document.getElementById('timeLightOn').value = sched.timeLightOn;
+            document.getElementById('timeLightOff').value = sched.timeLightOff;
+          } catch(e) {
+            console.error('Błąd JSON:', e);
+          }
+          break;
       }
     });
 
-    // ——— Po załadowaniu strony prosimy ESP o wysłanie aktualnego harmonogramu ———
-    window.addEventListener("load", () => {
-      setTimeout(() => {
-        // Wysyłamy pusty JSON na kurnik/schedule/set, aby ESP odpaliło publikację stanu
-        mqttClient.publish("kurnik/schedule/set", "{}");
-      }, 500);
+    document.getElementById('btnSaveSchedule').addEventListener('click', () => {
+      const payload = JSON.stringify({
+        timeOpen: document.getElementById('timeOpen').value,
+        timeClose: document.getElementById('timeClose').value,
+        timeLightOn: document.getElementById('timeLightOn').value,
+        timeLightOff: document.getElementById('timeLightOff').value
+      });
+      client.publish('kurnik/schedule/set', payload);
+      document.getElementById('schedStatus').textContent = 'Wysłano...';
+      setTimeout(() => document.getElementById('schedStatus').textContent = '', 2000);
     });
 
-    // ——— Przycisk: Zapisz harmonogram ———
-    document.getElementById("btnSaveSchedule").addEventListener("click", () => {
-      const tOpen     = document.getElementById("timeOpen").value;
-      const tClose    = document.getElementById("timeClose").value;
-      const tLightOn  = document.getElementById("timeLightOn").value;
-      const tLightOff = document.getElementById("timeLightOff").value;
-      if (tOpen && tClose && tLightOn && tLightOff) {
-        const payload = JSON.stringify({
-          timeOpen: tOpen,
-          timeClose: tClose,
-          timeLightOn: tLightOn,
-          timeLightOff: tLightOff
-        });
-        mqttClient.publish("kurnik/schedule/set", payload);
-        document.getElementById("schedStatus").textContent = "Wysłano...";
-        setTimeout(() => {
-          document.getElementById("schedStatus").textContent = "";
-        }, 2000);
-      } else {
-        alert("Uzupełnij wszystkie pola czasu.");
-      }
-    });
-
-    // ——— Przycisk: Włącz światło ———
-    document.getElementById("btnLightOn").addEventListener("click", () => {
-      mqttClient.publish("kurnik/light/cmd", "ON");
-    });
-
-    // ——— Przycisk: Wyłącz światło ———
-    document.getElementById("btnLightOff").addEventListener("click", () => {
-      mqttClient.publish("kurnik/light/cmd", "OFF");
-    });
-
-    // ——— Przycisk: Otwórz drzwi ———
-    document.getElementById("btnDoorOpen").addEventListener("click", () => {
-      mqttClient.publish("kurnik/door/cmd", "OPEN");
-    });
-
-    // ——— Przycisk: Zamknij drzwi ———
-    document.getElementById("btnDoorClose").addEventListener("click", () => {
-      mqttClient.publish("kurnik/door/cmd", "CLOSE");
-    });
-
-    // ——— Przycisk: STOP drzwi ———
-    document.getElementById("btnDoorStop").addEventListener("click", () => {
-      mqttClient.publish("kurnik/door/cmd", "STOP");
-    });
+    document.getElementById('btnLightOn').addEventListener('click', () => client.publish('kurnik/light/cmd', 'ON'));
+    document.getElementById('btnLightOff').addEventListener('click', () => client.publish('kurnik/light/cmd', 'OFF'));
+    document.getElementById('btnDoorOpen').addEventListener('click', () => client.publish('kurnik/door/cmd', 'OPEN'));
+    document.getElementById('btnDoorClose').addEventListener('click', () => client.publish('kurnik/door/cmd', 'CLOSE'));
+    document.getElementById('btnDoorStop').addEventListener('click', () => client.publish('kurnik/door/cmd', 'STOP'));
   </script>
 </body>
 </html>
