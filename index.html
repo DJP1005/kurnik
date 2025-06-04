@@ -1,133 +1,63 @@
+
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kurnik – Sterowanie (HiveMQ Cloud)</title>
-  <style>
-    body { font-family: sans-serif; margin: 10px; padding: 0; }
-    h1 { text-align: center; }
-    .section { border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
-    .section h2 { margin-top: 0; }
-    label { display: inline-block; width: 120px; }
-    input[type="time"] { width: 120px; }
-    button { margin: 5px; padding: 8px 12px; border-radius: 4px; border: none; background-color: #2c7; color: #fff; cursor: pointer; }
-    button.red { background-color: #c33; }
-    button.gray { background-color: #888; }
-    .status-lamp { display: inline-block; width: 15px; height: 15px; border-radius: 50%; margin-right: 5px; background-color: #888; }
-    .status-row { margin: 5px 0; }
-  </style>
+  <meta charset="UTF-8">
+  <title>Kurnik – Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body { font-family: Arial; background: #f4f4f4; padding: 20px; color: #222; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+    h1 { text-align: center; }
+    .status { margin: 10px 0; }
+    .lamp { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; background: gray; }
+    .green { background: green; }
+    .gray { background: gray; }
+    .time-display { font-size: 20px; text-align: center; margin: 15px 0; }
+    .schedule-list { font-family: monospace; background: #eee; padding: 10px; border-radius: 5px; }
+  </style>
 </head>
 <body>
-  <h1>Sterowanie Kurnikiem</h1>
-
-  <div class="section">
-    <h2>Zegar i statusy</h2>
-    <div class="status-row">Zegar ESP: <span id="clock">--:--:--</span></div>
-    <div class="status-row">
-      <span class="status-lamp" id="lampLightState"></span> Stan światła<br>
-      <span class="status-lamp" id="lampDoorState"></span> Stan drzwi<br>
-      <span class="status-lamp" id="lampLimitOpen"></span> Krańcówka OTWARCIA<br>
-      <span class="status-lamp" id="lampLimitClose"></span> Krańcówka ZAMKNIĘCIA
+  <div class="container">
+    <h1>Sterowanie Kurnikiem</h1>
+    <div class="time-display" id="espTime">--:--:--</div>
+    <div class="schedule-list" id="schedTimes">
+      Otwórz: --:--<br>
+      Zamknij: --:--<br>
+      Światło ON: --:--<br>
+      Światło OFF: --:--
     </div>
   </div>
-
-  <div class="section">
-    <h2>Harmonogram</h2>
-    <div>
-      <label for="timeOpen">Drzwi – otwórz:</label>
-      <input id="timeOpen" type="time" /><br/>
-      <label for="timeClose">Drzwi – zamknij:</label>
-      <input id="timeClose" type="time" /><br/>
-      <label for="timeLightOn">Światło – ON:</label>
-      <input id="timeLightOn" type="time" /><br/>
-      <label for="timeLightOff">Światło – OFF:</label>
-      <input id="timeLightOff" type="time" /><br/><br/>
-      <button id="btnSaveSchedule">Zapisz harmonogram</button>
-      <span id="schedStatus" style="margin-left: 10px; color: green;"></span>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>Sterowanie ręczne</h2>
-    <div class="status-row">
-      <button id="btnLightOn">Włącz światło</button>
-      <button class="red" id="btnLightOff">Wyłącz światło</button>
-    </div>
-    <div class="status-row">
-      <button id="btnDoorOpen">Otwórz drzwi</button>
-      <button class="red" id="btnDoorClose">Zamknij drzwi</button>
-      <button class="gray" id="btnDoorStop">STOP</button>
-    </div>
-  </div>
-
   <script>
-    const client = mqtt.connect('wss://42ceb2ec1aef4657b29ae73f374ca029.s1.eu.hivemq.cloud:8884/mqtt', {
-      username: 'websocket',
-      password: 'Pawel1005'
+    const client = mqtt.connect("wss://42ceb2ec1aef4657b29ae73f374ca029.s1.eu.hivemq.cloud:8884/mqtt", {
+      username: "websocket",
+      password: "Pawel1005",
+      clientId: "web_" + Math.random().toString(16).substr(2, 8),
+      keepalive: 60
     });
 
-    client.on('connect', () => {
-      console.log('[MQTT] Połączono');
-      client.subscribe('kurnik/time');
-      client.subscribe('kurnik/light/state');
-      client.subscribe('kurnik/door/state');
-      client.subscribe('kurnik/limit/open');
-      client.subscribe('kurnik/limit/close');
-      client.subscribe('kurnik/schedule/state');
-      client.publish('kurnik/schedule/set', '{}');
+    client.on("connect", () => {
+      console.log("MQTT connected");
+      client.subscribe("kurnik/time");
+      client.subscribe("kurnik/schedule/state");
     });
 
-    client.on('message', (topic, message) => {
+    client.on("message", (topic, message) => {
       const msg = message.toString();
-      switch(topic) {
-        case 'kurnik/time':
-          document.getElementById('clock').textContent = msg;
-          break;
-        case 'kurnik/light/state':
-          document.getElementById('lampLightState').style.backgroundColor = (msg === 'ON') ? '#2c7' : '#888';
-          break;
-        case 'kurnik/door/state':
-          document.getElementById('lampDoorState').style.backgroundColor = (msg === 'OPENING' || msg === 'CLOSING') ? '#2c7' : '#888';
-          break;
-        case 'kurnik/limit/open':
-          document.getElementById('lampLimitOpen').style.backgroundColor = (msg === '1') ? '#2c7' : '#888';
-          break;
-        case 'kurnik/limit/close':
-          document.getElementById('lampLimitClose').style.backgroundColor = (msg === '1') ? '#2c7' : '#888';
-          break;
-        case 'kurnik/schedule/state':
-          try {
-            const sched = JSON.parse(msg);
-            document.getElementById('timeOpen').value = sched.timeOpen;
-            document.getElementById('timeClose').value = sched.timeClose;
-            document.getElementById('timeLightOn').value = sched.timeLightOn;
-            document.getElementById('timeLightOff').value = sched.timeLightOff;
-          } catch(e) {
-            console.error('Błąd JSON:', e);
-          }
-          break;
+      if (topic === "kurnik/time") {
+        document.getElementById("espTime").textContent = msg;
+      } else if (topic === "kurnik/schedule/state") {
+        try {
+          const sched = JSON.parse(msg);
+          document.getElementById("schedTimes").innerHTML =
+            `Otwórz: ${sched.timeOpen}<br>Zamknij: ${sched.timeClose}<br>Światło ON: ${sched.timeLightOn}<br>Światło OFF: ${sched.timeLightOff}`;
+        } catch (e) {
+          console.error("Błąd JSON", e);
+        }
       }
     });
-
-    document.getElementById('btnSaveSchedule').addEventListener('click', () => {
-      const payload = JSON.stringify({
-        timeOpen: document.getElementById('timeOpen').value,
-        timeClose: document.getElementById('timeClose').value,
-        timeLightOn: document.getElementById('timeLightOn').value,
-        timeLightOff: document.getElementById('timeLightOff').value
-      });
-      client.publish('kurnik/schedule/set', payload);
-      document.getElementById('schedStatus').textContent = 'Wysłano...';
-      setTimeout(() => document.getElementById('schedStatus').textContent = '', 2000);
-    });
-
-    document.getElementById('btnLightOn').addEventListener('click', () => client.publish('kurnik/light/cmd', 'ON'));
-    document.getElementById('btnLightOff').addEventListener('click', () => client.publish('kurnik/light/cmd', 'OFF'));
-    document.getElementById('btnDoorOpen').addEventListener('click', () => client.publish('kurnik/door/cmd', 'OPEN'));
-    document.getElementById('btnDoorClose').addEventListener('click', () => client.publish('kurnik/door/cmd', 'CLOSE'));
-    document.getElementById('btnDoorStop').addEventListener('click', () => client.publish('kurnik/door/cmd', 'STOP'));
   </script>
 </body>
 </html>
+
