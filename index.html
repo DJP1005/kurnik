@@ -69,6 +69,14 @@
       keepalive: 60
     });
 
+    let isEditing = false;
+
+    document.querySelectorAll("input[type='time']").forEach(el => {
+      el.addEventListener("input", () => {
+        isEditing = true;
+      });
+    });
+
     client.on("connect", () => {
       client.subscribe("kurnik/time");
       client.subscribe("kurnik/light/state");
@@ -91,7 +99,7 @@
         document.getElementById("lampLimitOpen").style.backgroundColor = msg === "1" ? "#2c7" : "#888";
       } else if (topic === "kurnik/limit/close") {
         document.getElementById("lampLimitClose").style.backgroundColor = msg === "1" ? "#2c7" : "#888";
-      } else if (topic === "kurnik/schedule/state") {
+      } else if (topic === "kurnik/schedule/state" && !isEditing) {
         try {
           const sched = JSON.parse(msg);
           document.getElementById("timeOpen").value = sched.timeOpen;
@@ -128,6 +136,7 @@
         client.publish("kurnik/schedule/set", payload);
         document.getElementById("schedStatus").textContent = "Wysłano...";
         setTimeout(() => { document.getElementById("schedStatus").textContent = ""; }, 2000);
+        isEditing = false;
       } else {
         alert("Uzupełnij wszystkie pola czasu.");
       }
