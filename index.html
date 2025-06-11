@@ -23,14 +23,23 @@
     }
     .door-pos { margin-left: 15px; font-size: 20px; }
 
-    .status-row { margin: 10px 0; font-size: 18px; }
-    .status-lamp { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-right: 8px; background: gray; }
+    .status-row { margin: 15px 0; font-size: 20px; }
+    .status-lamp {
+      width: 24px; height: 24px;      /* powiększone */
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 12px;
+      background: gray;
+      vertical-align: middle;
+    }
 
     .section { background: #fafafa; border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-top: 20px; }
     .section h2 { font-size: 20px; margin-top: 0; }
 
     label { display: inline-block; width: 160px; font-size: 18px; margin-bottom: 8px; }
-    input[type="time"] { width: 140px; font-size: 18px; }
+    input[type="time"], input[type="number"] {
+      width: 140px; font-size: 18px; padding: 4px;
+    }
 
     button {
       margin: 5px 3px; padding: 10px 16px;
@@ -43,7 +52,6 @@
     #schedStatus { margin-left: 10px; color: green; font-size: 18px; }
     #btnToggleSchedule { background: #f80; color: white; }
   </style>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -59,15 +67,19 @@
 
     <div class="status-row">
       <span class="status-lamp" id="lampLightState"></span> Światło
-      <span class="status-lamp" id="lampDoorState" style="margin-left:20px;"></span> Drzwi
+      <span class="status-lamp" id="lampDoorState" style="margin-left:30px;"></span> Drzwi
     </div>
 
     <div class="section">
       <h2>Harmonogram</h2>
-      <label for="timeOpen">Drzwi – otwórz:</label><input id="timeOpen" type="time"><br>
-      <label for="timeClose">Drzwi – zamknij:</label><input id="timeClose" type="time"><br>
-      <label for="timeLightOn">Światło – ON:</label><input id="timeLightOn" type="time"><br>
-      <label for="timeLightOff">Światło – OFF:</label><input id="timeLightOff" type="time"><br><br>
+      <label for="timeOpen">Drzwi – otwórz:</label>
+      <input id="timeOpen" type="time"><br>
+      <label for="timeClose">Drzwi – zamknij:</label>
+      <input id="timeClose" type="time"><br>
+      <label for="timeLightOn">Światło – ON:</label>
+      <input id="timeLightOn" type="time"><br>
+      <label for="timeLightOff">Światło – OFF:</label>
+      <input id="timeLightOff" type="time"><br><br>
       <button class="green" id="btnSaveSchedule">Zapisz harmonogram</button>
       <span id="schedStatus"></span><br><br>
       <button class="gray" id="btnToggleSchedule">Wyłącz harmonogram</button>
@@ -77,14 +89,17 @@
     <div class="section">
       <h2>Sterowanie ręczne</h2>
       <button class="green" id="btnLightOn">Włącz światło</button>
-      <button class="red"   id="btnLightOff">Wyłącz światło</button><br>
+      <button class="red"   id="btnLightOff">Wyłącz światło</button><br><br>
       <button class="green" id="btnDoorOpen">Otwórz drzwi</button>
       <button class="red"   id="btnDoorClose">Zamknij drzwi</button>
       <button class="gray"  id="btnDoorStop">STOP</button><br><br>
-      <button class="gray"  id="btnSetCount">Ustaw liczbę obrotów</button>
+      <label for="inputCount">Ilość obrotów:</label>
+      <input id="inputCount" type="number" min="1" value="19">
+      <button class="gray" id="btnSetCount">Ustaw</button>
     </div>
   </div>
 
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
     const client = mqtt.connect("wss://42ceb2ec1aef4657b29ae73f374ca029.s1.eu.hivemq.cloud:8884/mqtt", {
       username: "websocket",
@@ -94,11 +109,14 @@
     });
 
     let isEditing = false, scheduleEnabled = true;
+
+    // zablokuj nadpisywanie podczas edycji
     document.querySelectorAll("input[type='time']").forEach(el =>
       el.addEventListener("input", () => isEditing = true)
     );
 
     client.on("connect", () => {
+      // subskrypcje
       client.subscribe("kurnik/time");
       client.subscribe("kurnik/light/state");
       client.subscribe("kurnik/door/state");
@@ -107,74 +125,97 @@
       client.subscribe("kurnik/door/count");
       client.subscribe("kurnik/schedule/state");
       client.subscribe("kurnik/schedule/enabled");
+      // poproś o stan
       client.publish("kurnik/schedule/request", "");
     });
 
-    client.on("message", (topic,payload) => {
-      const msg = payload.toString(),
-            t   = topic.split("/")[1];
-      if (t==="time") document.getElementById("espTime").textContent = msg;
-      else if (t==="light") document.getElementById("lampLightState")
-        .style.backgroundColor = (msg==="ON"?"green":"gray");
-      else if (t==="state" && topic.endsWith("door/state")) document.getElementById("lampDoorState")
-        .style.backgroundColor = (msg!=="STOPPED"?"green":"gray");
-      else if (t==="percent") document.getElementById("roletaBar")
-        .style.height = (100-parseInt(msg)) + "%";
-      else if (t==="position") {
-        const total = document.getElementById("doorPos").textContent.split("/")[1];
-        document.getElementById("doorPos").textContent = msg + "/" + total;
-      }
-      else if (t==="count") {
-        const pos = document.getElementById("doorPos").textContent.split("/")[0];
-        document.getElementById("doorPos").textContent = pos + "/" + msg;
-      }
-      else if (t==="enabled") {
-        scheduleEnabled = (msg==="ON");
-        document.getElementById("btnToggleSchedule").textContent =
-          scheduleEnabled ? "Wyłącz harmonogram" : "Włącz harmonogram";
-        document.getElementById("toggleStatus").textContent =
-          scheduleEnabled ? "(włączony)" : "(wyłączony)";
-      }
-      else if (t==="state" && topic.endsWith("schedule/state") && !isEditing) {
-        try {
-          const s = JSON.parse(msg);
-          document.getElementById("timeOpen").value     = s.timeOpen;
-          document.getElementById("timeClose").value    = s.timeClose;
-          document.getElementById("timeLightOn").value  = s.timeLightOn;
-          document.getElementById("timeLightOff").value = s.timeLightOff;
-        } catch(e) { console.error(e); }
+    client.on("message", (topic, payload) => {
+      const msg = payload.toString();
+      switch(topic) {
+        case "kurnik/time":
+          document.getElementById("espTime").textContent = msg;
+          break;
+        case "kurnik/light/state":
+          document.getElementById("lampLightState")
+            .style.backgroundColor = msg === "ON" ? "green" : "gray";
+          break;
+        case "kurnik/door/state":
+          document.getElementById("lampDoorState")
+            .style.backgroundColor = msg !== "STOPPED" ? "green" : "gray";
+          break;
+        case "kurnik/door/percent":
+          document.getElementById("roletaBar")
+            .style.height = (100 - parseInt(msg)) + "%";
+          break;
+        case "kurnik/door/position":
+          const total = document.getElementById("doorPos").textContent.split("/")[1];
+          document.getElementById("doorPos").textContent = msg + "/" + total;
+          break;
+        case "kurnik/door/count":
+          const curr = document.getElementById("doorPos").textContent.split("/")[0];
+          document.getElementById("doorPos").textContent = curr + "/" + msg;
+          document.getElementById("inputCount").value = msg;
+          break;
+        case "kurnik/schedule/state":
+          if (!isEditing) {
+            try {
+              const s = JSON.parse(msg);
+              document.getElementById("timeOpen").value     = s.timeOpen;
+              document.getElementById("timeClose").value    = s.timeClose;
+              document.getElementById("timeLightOn").value  = s.timeLightOn;
+              document.getElementById("timeLightOff").value = s.timeLightOff;
+            } catch(e){ console.error(e); }
+          }
+          break;
+        case "kurnik/schedule/enabled":
+          scheduleEnabled = (msg === "ON");
+          document.getElementById("btnToggleSchedule").textContent =
+            scheduleEnabled ? "Wyłącz harmonogram" : "Włącz harmonogram";
+          document.getElementById("toggleStatus").textContent =
+            scheduleEnabled ? "(włączony)" : "(wyłączony)";
+          break;
       }
     });
 
+    // Zapis harmonogramu
     document.getElementById("btnSaveSchedule").onclick = () => {
       const tO = document.getElementById("timeOpen").value,
             tC = document.getElementById("timeClose").value,
             t1 = document.getElementById("timeLightOn").value,
             t2 = document.getElementById("timeLightOff").value;
-      if (tO&&tC&&t1&&t2) {
-        client.publish("kurnik/schedule/set", JSON.stringify({
-          timeOpen:tO, timeClose:tC,
-          timeLightOn:t1, timeLightOff:t2
-        }));
+      if (tO && tC && t1 && t2) {
+        client.publish("kurnik/schedule/set",
+          JSON.stringify({timeOpen:tO,timeClose:tC,timeLightOn:t1,timeLightOff:t2})
+        );
         document.getElementById("schedStatus").textContent = "Wysłano!";
-        setTimeout(()=>{ document.getElementById("schedStatus").textContent=""; isEditing=false; },2000);
-      } else alert("Uzupełnij pola!");
+        setTimeout(()=>{
+          document.getElementById("schedStatus").textContent="";
+          isEditing = false;
+        },2000);
+      } else alert("Uzupełnij wszystkie pola!");
     };
 
+    // Włącz/wyłącz harmonogram
     document.getElementById("btnToggleSchedule").onclick = () => {
-      client.publish("kurnik/schedule/enabled/set", scheduleEnabled ? "OFF" : "ON");
+      client.publish("kurnik/schedule/enabled/set",
+        scheduleEnabled ? "OFF" : "ON"
+      );
     };
 
+    // Ręczne sterowanie
     document.getElementById("btnLightOn").onclick   = () => client.publish("kurnik/light/cmd","ON");
     document.getElementById("btnLightOff").onclick  = () => client.publish("kurnik/light/cmd","OFF");
     document.getElementById("btnDoorOpen").onclick  = () => client.publish("kurnik/door/cmd","OPEN");
     document.getElementById("btnDoorClose").onclick = () => client.publish("kurnik/door/cmd","CLOSE");
     document.getElementById("btnDoorStop").onclick  = () => client.publish("kurnik/door/cmd","STOP");
 
+    // Ustawienie liczby obrotów
     document.getElementById("btnSetCount").onclick = () => {
-      const v = prompt("Podaj liczbę obrotów:", totalPositions);
-      if (v!==null && /^\d+$/.test(v)) {
-        client.publish("kurnik/door/count/set", v);
+      const v = parseInt(document.getElementById("inputCount").value);
+      if (v >= 1 && v <= 1000) {
+        client.publish("kurnik/door/count/set", v.toString());
+      } else {
+        alert("Podaj liczbę od 1 do 1000.");
       }
     };
   </script>
